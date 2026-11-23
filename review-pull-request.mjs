@@ -40,7 +40,7 @@ const REVIEW_TIERS = {
     reviewFocus: SECURITY_REVIEW_FOCUS,
     includeFullFileContents: true,
     maxPromptCharacters: 800_000,
-    effort: "high",
+    effort: "xhigh",
     models: {
       anthropic: { model: "claude-opus-5-5", displayName: "Claude Opus 5.5", usdPerMillionInputTokens: 4, usdPerMillionOutputTokens: 20, supportsRefusalFallback: true },
       openai: { model: "gpt-6.2-sol", displayName: "GPT-6.2 Sol", effort: "max", usdPerMillionInputTokens: 2, usdPerMillionOutputTokens: 10 },
