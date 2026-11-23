@@ -1,0 +1,37 @@
+name: AI PR Review
+description: Reviews a pull request with Claude and GPT when someone comments /ai-review.
+inputs:
+  anthropic-api-key:
+    description: Anthropic API key used for reviews.
+    required: true
+  openai-api-key:
+    description: OpenAI API key used for reviews.
+    required: true
+  github-token:
+    description: Token that can read the pull request and post reviews.
+    default: ${{ github.token }}
+  default-tier:
+    description: Tier when the comment names none (light, standard, deep, security).
+    default: standard
+  default-providers:
+    description: Providers when the comment names none (anthropic, openai, both).
+    default: both
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      with:
+        node-version: 24
+    - shell: bash
+      run: npm ci --prefix "$GITHUB_ACTION_PATH" --ignore-scripts
+    - shell: bash
+      run: node "$GITHUB_ACTION_PATH/review-pull-request.mjs"
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        ANTHROPIC_REVIEWER_API_KEY: ${{ inputs.anthropic-api-key }}
+        OPENAI_API_REVIEWER_KEY: ${{ inputs.openai-api-key }}
+        PULL_REQUEST_NUMBER: ${{ github.event.issue.number }}
+        REVIEW_COMMAND: ${{ github.event.comment.body }}
+        REVIEW_COMMAND_COMMENT_ID: ${{ github.event.comment.id }}
+        DEFAULT_REVIEW_TIER: ${{ inputs.default-tier }}
+        DEFAULT_REVIEW_PROVIDERS: ${{ inputs.default-providers }}
