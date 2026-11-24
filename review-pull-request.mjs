@@ -10,19 +10,17 @@ const REVIEW_TIERS = {
     reviewFocus: GENERAL_REVIEW_FOCUS,
     includeFullFileContents: false,
     maxPromptCharacters: 120_000,
-    effort: "low",
     models: {
-      anthropic: { model: "claude-haiku-5-5", displayName: "Claude Haiku 5.5", usdPerMillionInputTokens: 0.1, usdPerMillionOutputTokens: 0.5, supportsRefusalFallback: false },
-      openai: { model: "gpt-6-luna", displayName: "GPT-6 Luna", usdPerMillionInputTokens: 0.1, usdPerMillionOutputTokens: 0.5 },
+      anthropic: { model: "claude-haiku-5-5", displayName: "Claude Haiku 5.5", effort: "xhigh", usdPerMillionInputTokens: 0.1, usdPerMillionOutputTokens: 0.5, supportsRefusalFallback: false },
+      openai: { model: "gpt-6-luna", displayName: "GPT-6 Luna", effort: "max", usdPerMillionInputTokens: 0.1, usdPerMillionOutputTokens: 0.5 },
     },
   },
   standard: {
     reviewFocus: GENERAL_REVIEW_FOCUS,
     includeFullFileContents: true,
     maxPromptCharacters: 400_000,
-    effort: "xhigh",
     models: {
-      anthropic: { model: "claude-opus-5-5", displayName: "Claude Opus 5.5", usdPerMillionInputTokens: 4, usdPerMillionOutputTokens: 20, supportsRefusalFallback: true },
+      anthropic: { model: "claude-opus-5-5", displayName: "Claude Opus 5.5", effort: "xhigh", usdPerMillionInputTokens: 4, usdPerMillionOutputTokens: 20, supportsRefusalFallback: true },
       openai: { model: "gpt-6.2-sol", displayName: "GPT-6.2 Sol", effort: "max", usdPerMillionInputTokens: 2, usdPerMillionOutputTokens: 10 },
     },
   },
@@ -30,19 +28,17 @@ const REVIEW_TIERS = {
     reviewFocus: GENERAL_REVIEW_FOCUS,
     includeFullFileContents: true,
     maxPromptCharacters: 800_000,
-    effort: "xhigh",
     models: {
-      anthropic: { model: "claude-fable-5-2", displayName: "Claude Fable 5.2", usdPerMillionInputTokens: 8, usdPerMillionOutputTokens: 40, supportsRefusalFallback: true },
-      openai: { model: "gpt-6.2-astra", displayName: "GPT-6.2 Astra", usdPerMillionInputTokens: 8, usdPerMillionOutputTokens: 40 },
+      anthropic: { model: "claude-fable-5-2", displayName: "Claude Fable 5.2", effort: "xhigh", usdPerMillionInputTokens: 8, usdPerMillionOutputTokens: 40, supportsRefusalFallback: true },
+      openai: { model: "gpt-6.2-astra", displayName: "GPT-6.2 Astra", effort: "max", usdPerMillionInputTokens: 8, usdPerMillionOutputTokens: 40 },
     },
   },
   security: {
     reviewFocus: SECURITY_REVIEW_FOCUS,
     includeFullFileContents: true,
     maxPromptCharacters: 800_000,
-    effort: "xhigh",
     models: {
-      anthropic: { model: "claude-opus-5-5", displayName: "Claude Opus 5.5", usdPerMillionInputTokens: 4, usdPerMillionOutputTokens: 20, supportsRefusalFallback: true },
+      anthropic: { model: "claude-opus-5-5", displayName: "Claude Opus 5.5", effort: "xhigh", usdPerMillionInputTokens: 4, usdPerMillionOutputTokens: 20, supportsRefusalFallback: true },
       openai: { model: "gpt-6.2-sol", displayName: "GPT-6.2 Sol", effort: "max", usdPerMillionInputTokens: 2, usdPerMillionOutputTokens: 10 },
     },
   },
@@ -122,7 +118,7 @@ async function main() {
   const results = await Promise.allSettled(providers.map(async (provider) => {
     const modelConfig = tier.models[provider];
     const reviewWithProvider = provider === "anthropic" ? reviewWithAnthropic : reviewWithOpenAI;
-    const modelResult = await reviewWithProvider(tier, modelConfig, systemPrompt, reviewContext.prompt);
+    const modelResult = await reviewWithProvider(modelConfig, systemPrompt, reviewContext.prompt);
     console.log(`${modelResult.modelUsed}: ${modelResult.review.findings.length} findings, ${modelResult.inputTokens} input / ${modelResult.outputTokens} output tokens`);
     await postReview(pullRequest, reviewContext, tierName, modelConfig, modelResult);
   }));
@@ -227,7 +223,7 @@ function numberPatchLines(patch) {
   return { numberedPatch: numberedLines.join("\n"), commentableLines };
 }
 
-async function reviewWithAnthropic(tier, modelConfig, systemPrompt, prompt) {
+async function reviewWithAnthropic(modelConfig, systemPrompt, prompt) {
   const client = new Anthropic({ apiKey: requireEnv("ANTHROPIC_REVIEWER_API_KEY") });
   const request = {
     model: modelConfig.model,
@@ -235,7 +231,7 @@ async function reviewWithAnthropic(tier, modelConfig, systemPrompt, prompt) {
     system: systemPrompt,
     messages: [{ role: "user", content: prompt }],
     thinking: { type: "adaptive" },
-    output_config: { effort: tier.effort, format: { type: "json_schema", schema: REVIEW_OUTPUT_SCHEMA } },
+    output_config: { effort: modelConfig.effort, format: { type: "json_schema", schema: REVIEW_OUTPUT_SCHEMA } },
   };
   const message = modelConfig.supportsRefusalFallback
     ? await client.beta.messages.stream({ ...request, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" }).finalMessage()
@@ -254,13 +250,13 @@ async function reviewWithAnthropic(tier, modelConfig, systemPrompt, prompt) {
   };
 }
 
-async function reviewWithOpenAI(tier, modelConfig, systemPrompt, prompt) {
+async function reviewWithOpenAI(modelConfig, systemPrompt, prompt) {
   const client = new OpenAI({ apiKey: requireEnv("OPENAI_API_REVIEWER_KEY"), timeout: 55 * 60 * 1000 });
   const response = await client.responses.create({
     model: modelConfig.model,
     instructions: systemPrompt,
     input: prompt,
-    reasoning: { effort: modelConfig.effort ?? tier.effort },
+    reasoning: { effort: modelConfig.effort },
     store: false,
     text: { format: { type: "json_schema", name: "pull_request_review", strict: true, schema: REVIEW_OUTPUT_SCHEMA } },
   });
@@ -330,7 +326,7 @@ function buildReviewBody(tierName, modelConfig, modelResult, reviewContext, inli
     : `≈ ${estimatedCostUsd < 0.01 ? "<$0.01" : `$${estimatedCostUsd.toFixed(2)}`}`;
   const tier = REVIEW_TIERS[tierName];
   sections.push([
-    `<sub>\`${modelResult.modelUsed}\` · effort ${modelConfig.effort ?? tier.effort}`,
+    `<sub>\`${modelResult.modelUsed}\` · effort ${modelConfig.effort}`,
     `${reviewContext.reviewedFileCount} diffs${tier.includeFullFileContents ? ` + ${reviewContext.fullFileCount} full files` : ""}`,
     `${modelResult.inputTokens.toLocaleString("en-US")} in / ${modelResult.outputTokens.toLocaleString("en-US")} out tokens`,
     costEstimate,
